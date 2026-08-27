@@ -8,11 +8,18 @@ function doPost(e) {
       throw new Error('No request body received.');
     }
 
-    var data = JSON.parse(e.postData.contents);
+    var data;
+    var contentType = String(e.postData.type || '').toLowerCase();
+    if (contentType.indexOf('application/json') === 0 || contentType.indexOf('text/plain') === 0) {
+      data = JSON.parse(e.postData.contents);
+    } else {
+      data = e.parameter || {};
+    }
     var email = String(data.email || '').trim();
     var name = String(data.name || '').trim();
     var pdfBase64 = String(data.pdfBase64 || '').trim();
     var filename = String(data.filename || 'Sagility-eSign-Forms.pdf').trim();
+    var requestId = String(data.requestId || '');
 
     if (!email || !name || !pdfBase64) {
       throw new Error('Missing email, name, or PDF data.');
@@ -39,11 +46,32 @@ function doPost(e) {
       attachments: [attachment]
     });
 
-    return jsonResponse({ success: true });
+    return htmlResponse('Email sent successfully.', true, requestId);
   } catch (error) {
     console.error(error.stack || error.message || error);
-    return jsonResponse({ success: false, error: error.message || String(error) });
+    return htmlResponse('Email could not be sent: ' + (error.message || String(error)), false, requestId);
   }
+}
+
+function htmlResponse(message, success, requestId) {
+  var result = JSON.stringify({
+    type: 'sagility-email-result',
+    success: Boolean(success),
+    message: message,
+    requestId: requestId || ''
+  }).replace(/</g, '\\u003c');
+  return HtmlService
+    .createHtmlOutput('<!doctype html><title>Sagility email service</title><p>' + escapeHtml(message) + '</p><script>parent.postMessage(' + result + ', "*");</script>')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function jsonResponse(payload) {
